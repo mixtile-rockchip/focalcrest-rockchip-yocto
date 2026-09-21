@@ -48,6 +48,7 @@ EXTRA_OEMAKE:append:focalcrest-rk3588s = " TEE=${WORKDIR}/tee-optee-v1.bin"
 DEPENDS:append:focalcrest-rk3566 = " xxd-native"
 DEPENDS:append:focalcrest-rk3576 = " xxd-native"
 DEPENDS:append:focalcrest-rk3588s = " xxd-native"
+DEPENDS:append:focalcrest-rk3568 = " xxd-native"
 
 do_configure:prepend:az07() {
 	install -m 0644 ${UNPACKDIR}/rk3566-focalcrest-az07.dts \
@@ -116,4 +117,23 @@ do_configure:prepend:az04b() {
 	install -d ${S}/board/focalcrest/az04b
 	install -m 0644 ${UNPACKDIR}/rk3588s-focalcrest-az04b.env \
 		${S}/board/focalcrest/az04b/
+}
+
+SRC_URI:append:edge2 = " \
+    file://rk3568-mixtile-edge2.dts \
+    file://rk3568-mixtile-edge2-u-boot.dtsi \
+    file://rk3568-mixtile-edge2_defconfig \
+    file://rk3568-mixtile-edge2.env \
+"
+
+do_configure:prepend:edge2() {
+	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2.dts \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2-u-boot.dtsi \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2_defconfig \
+		${S}/configs/
+	install -d ${S}/board/focalcrest/edge2
+	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2.env \
+		${S}/board/focalcrest/edge2/
 }

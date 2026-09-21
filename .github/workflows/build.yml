@@ -15,6 +15,7 @@ on:
           - rk3566-autonomic-m1
           - rk3576s-focalcrest-az08
           - rk3588s-focalcrest-az04b
+          - rk3568-mixtile-edge2
 
 permissions:
   contents: write

@@ -20,6 +20,7 @@ Supported MACHINEs:
   rk3566-autonomic-m1
   rk3576s-focalcrest-az08
   rk3588s-focalcrest-az04b
+  rk3568-mixtile-edge2
 
 Switching MACHINE (one build directory per board, sharing downloads/sstate):
   . ./setup-env.sh build-m1

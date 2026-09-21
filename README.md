@@ -40,3 +40,4 @@ baseline.
 | `rk3566-autonomic-m1` | RK3566 |
 | `rk3576s-focalcrest-az08` | RK3576S |
 | `rk3588s-focalcrest-az04b` | RK3588S |
+| `rk3568-mixtile-edge2` | RK3568 |

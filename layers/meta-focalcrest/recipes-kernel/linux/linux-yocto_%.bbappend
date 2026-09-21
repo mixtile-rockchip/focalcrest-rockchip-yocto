@@ -70,3 +70,20 @@ do_configure:prepend:az04b() {
 			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
 	fi
 }
+
+COMPATIBLE_MACHINE:rk3568-mixtile-edge2 = "rk3568-mixtile-edge2"
+
+SRC_URI:append:edge2 = " \
+    file://defconfig \
+    file://rk3568-mixtile-edge2.dts \
+"
+
+do_configure:prepend:edge2() {
+	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2.dts \
+		${S}/arch/arm64/boot/dts/rockchip/
+	if ! grep -q "rk3568-mixtile-edge2.dtb" \
+			${S}/arch/arm64/boot/dts/rockchip/Makefile; then
+		echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-mixtile-edge2.dtb' \
+			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
+	fi
+}

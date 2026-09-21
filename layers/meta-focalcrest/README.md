@@ -277,6 +277,97 @@ in neither the 6.18 binding nor `rtc-hym8563.c`), and `supports-cqe` dropped.
 `usb_host1_xhci` is left off because `usbdp_phy1` is not described. The
 `usb-c-connector` deliberately has no `port@2`, so DP alt-mode is not wired.
 
+### `rk3568-mixtile-edge2`
+
+Mixtile Edge 2 — a CORE3568 SoM on the Edge 2 mainboard, Rockchip **RK3568**, the
+first RK3568 board in this layer. Upstream `meta-rockchip` ships `rk3568.inc`
+*and* the rk3568 rkbin entries, so `focalcrest-rk3568.inc` only layers the
+Focalcrest conventions on top and this layer carries **no rkbin bbappend** for the
+SoC. Load addresses, tune and console match the RK3566 column of the table above.
+
+The device tree is an upstream-style mainline device tree written against 6.18
+after a schematic review, and is installed verbatim apart from the three deltas
+listed at the end of this section.
+
+**This is the only board here that does not carry OP-TEE.** Its device tree has
+no `reserved-memory` node, and without a matching `no-map` reservation the kernel
+allocates and DMAs into secure DRAM. So `focalcrest-rk3568` is deliberately
+absent from `do_fc_wrap_optee`'s SoC set in `u-boot_%.bbappend`, no `TEE=` is
+passed, and `u-boot.itb` holds TPL + SPL + U-Boot + bl31 only — exactly like every
+upstream mainline rk3568 board. bl31 logs `No OPTEE provided by BL2` and
+continues; that is expected.
+
+| Peripheral | Configuration |
+|---|---|
+| eMMC | `sdhci` / `rk3568-dwcmshc`, 8-bit **HS200** 200 MHz, non-removable, `vmmc` = `vcc_3v3`, `vqmmc` = `vcc_1v8`. HS400 is deliberately not declared — see Known issues |
+| SD slot | `sdmmc0`, 4-bit SDR104, `vmmc` = `vcc3v3_sd` (RK809 SWITCH_REG2), `vqmmc` = `vccio_sd` |
+| PCIe | `pcie3x2` Gen3 x2 to the M.2 key B socket, PERST# gpio2 PD6, `vpcie3v3` = `vcc3v3_m2`; `pcie30phy` takes its reference clock from the on-board PI6C generator, gated by `vcc3v3_pi6c` (gpio3 PB3, **always-on** — see Implementation notes) |
+| mini-PCIe | USB-only socket on `usb2phy1_otg`, powered by `vcc3v3_minipcie` |
+| USB | OTG (`usb_host0_xhci`, high-speed only — the Type-C receptacle has no SuperSpeed pairs), USB3 host (`usb_host1_xhci`) behind a VL817 dual hub (`usb2109,2817` + `usb2109,817`, shared RESET# gpio3 PB4), 2× USB2 host |
+| Ethernet | `gmac1` RGMII + RTL8211F @ mdio1 addr 0, `gmac1m1_*` pin groups, PHY reset through `snps,reset-gpio` gpio2 PD1 (see Implementation notes), `tx_delay = 0x4f` / `rx_delay = 0x26` |
+| WiFi | AP6275S (BCM43752A2) on `sdmmc2`, SDR104; LPO is the on-board 32.768 kHz oscillator, not the PMIC clkout (R142 is NC). Firmware from `firmware-ap6275s` |
+| Bluetooth | AP6275S on `uart8` (m0 pins), hardware flow control, `max-speed = 1500000`; firmware `BCM4362A2.hcd` |
+| PMIC | RK809 @ i2c0 0x20, `system-power-controller`, also the audio codec |
+| CPU regulator | TCS4525 @ i2c0 0x1c (binds through `fan53555`) |
+| RTC | HYM8563 @ i2c3 0x51 |
+| Display | VOP2 + `rk3568-dw-hdmi` → `hdmi-connector`; HDMI audio via `i2s0_8ch` |
+| Audio | RK809 codec on `i2s1_8ch` (`simple-audio-card`) |
+| GPU | Mali G52, `panfrost` |
+| CAN | `can1` (m1 pins), `rockchip,rk3568v2-canfd` |
+| IR | `gpio-ir-receiver` on gpio0 PC6 |
+| Keys / LED | recovery key gpio0 PD6; `gpio-leds` status LED gpio0 PC0, heartbeat |
+| mmc numbering | `mmc0` = eMMC, `mmc1` = SD slot, `mmc2` = WiFi SDIO (pinned via `aliases`) |
+
+**defconfig delta against AZ07** (Edge2's defconfig is derived from AZ07's):
+
+```
+CONFIG_RTC_DRV_HYM8563=y          # AZ07 uses PCF8563
+# CONFIG_RTC_DRV_PCF8563 is not set
+CONFIG_PCI=y                      # pcie3x2
+CONFIG_PCI_MSI=y
+CONFIG_PCIE_ROCKCHIP_DW_HOST=y
+CONFIG_PHY_ROCKCHIP_SNPS_PCIE3=y  # pcie30phy
+CONFIG_BLK_DEV_NVME=m             # NVMe in the M.2 socket
+CONFIG_ROCKCHIP_DW_HDMI=y         # hdmi -> hdmi-connector
+CONFIG_DRM_DISPLAY_CONNECTOR=y
+CONFIG_DRM_DW_HDMI_I2S_AUDIO=m    # hdmi_sound
+CONFIG_SND_SOC_RK817=m            # rk809 codec
+CONFIG_CAN=m                      # can1
+CONFIG_CAN_DEV=m
+CONFIG_CAN_ROCKCHIP_CANFD=m
+CONFIG_RC_CORE=m                  # ir-receiver
+CONFIG_RC_DEVICES=y
+CONFIG_IR_GPIO_CIR=m
+CONFIG_USB_ONBOARD_DEV=y          # usb2109,2817 / usb2109,817
+CONFIG_SERIAL_8250_NR_UARTS=10    # the DTS enables uart2/3/4/5/8
+CONFIG_SERIAL_8250_RUNTIME_UARTS=10
+```
+
+`CONFIG_RC_DEVICES=y` and `CONFIG_SERIAL_8250_NR_UARTS` are both there because of
+the `KCONFIG_MODE = "alldefconfig"` trap below: `IR_GPIO_CIR` sits under the
+`RC_DEVICES` menuconfig and was dropped without a word until that was set, and
+with only four 8250 ports the five enabled UARTs filled ttyS0–3 and uart8 — the
+Bluetooth one — failed to register with `-ENOSPC`.
+
+**Validated on hardware**: boot chain (idbloader + u-boot.itb without OP-TEE +
+kernel.fit), eMMC HS200 29.1 GiB, SD slot, PCIe Gen3 x2 link up with an NVMe SSD
+(1335 MB/s sequential read), Gigabit Ethernet (944 Mbit/s TX / 893 Mbit/s RX, no
+CRC or frame errors), WiFi (both bands), Bluetooth (BCM43752A2), the VL817 hub on
+both its 2.0 and 3.0 sides with USB mass storage behind it, CDC-ECM debug link.
+
+**Three deltas against the reviewed device tree** — all of them timing or binding
+usage, none of them hardware description:
+
+* `mmc-hs400-1_8v` / `mmc-hs400-enhanced-strobe` dropped (Known issues).
+* PHY reset moved from the `mdio1` child to `&gmac1` as `snps,reset-gpio` +
+  `snps,reset-delays-us` (Implementation notes).
+* `vcc3v3_pi6c` marked `regulator-always-on` / `regulator-boot-on`
+  (Implementation notes).
+
+**Not enabled**: SPI NOR (the FSPI pins are used as GPIO on this board), GMAC0
+(routed to the U.2 connector, no PHY on board), `combphy0` (no SuperSpeed pairs
+on the Type-C receptacle).
+
 ## Partition layout
 
 `files/wic/focalcrest-emmc.wks.in`
@@ -400,6 +491,39 @@ optee-os. The `ddr-rk3576.bin` deploy name is fixed by
 Omitting it fails in `dtc` with `Unexpected 'GPIO_ACTIVE_LOW'` at a line inside
 `rk3576.dtsi`, which looks like an upstream bug.
 
+**A PHY behind a reset GPIO needs `snps,reset-gpio` on the MAC node**
+`fwnode_mdiobus_register_phy()` reads the PHY ID with `get_phy_device()` *before*
+`phy_device_register()` applies the `reset-gpios` of the `mdio` child node. A PHY
+still held in reset is therefore invisible to the bus scan, the PHY device is
+never created, and its reset is never released — `MDIO device at address 0 is
+missing` followed by `cannot attach to PHY (error: -ENODEV)`. `snps,reset-gpio` on
+the MAC node does not have that problem: `stmmac_mdio_register()` installs
+`stmmac_mdio_reset` as `mii_bus->reset` before `of_mdiobus_register()`, so the
+PHY is pulsed before the scan. Upstream boards that use the `mdio` child form get
+away with it because their reset line has an external pull-up; Edge2's floats.
+
+**`phy-supply` is enabled by `phy_power_on()`, not by `phy_init()`**
+A PHY whose `.init` already needs the external world powered — such as
+`rockchip_p3phy_rk3568_init()`, which polls the PCIe 3.0 PHY's SRAM init done bit
+and needs the board's reference clock generator running — cannot get that power
+from `phy-supply`: `phy-core.c` enables it one step later, in `phy_power_on()`.
+The symptom is `lock failed 0x…, check input refclk and power supply` and a
+`-110` probe failure, with the regulator sitting at `state=disabled` in
+`/sys/kernel/debug/regulator/regulator_summary`. Mark such a rail
+`regulator-always-on`.
+
+**A DT node that backs two struct devices must not carry `pinctrl-0`**
+An onboard USB hub node is instantiated twice: once as a platform device by
+`onboard_usb_dev` (`fd000000.usb:hub@1`) and once as the enumerated USB device
+(`1-1`). Both get the node's default pinctrl state applied, and the second claim
+is rejected because `pin_request()` compares the mux owner's name — `pin gpio3-12
+already requested by fd000000.usb:hub@1; cannot claim for 1-1`, then
+`onboard-usb-dev 1-1: Error applying setting, reverse things back`. Describe the
+line with `reset-gpios` alone; upstream hub nodes carry no pinctrl. Note this is
+specific to double-instantiated nodes — a regulator or LED node muxing a pin *and*
+using it as a GPIO is fine, because `pin_request()` tracks `mux_owner` and
+`gpio_owner` separately.
+
 **`DEPENDS += "xxd-native"`** (`u-boot_%.bbappend`)
 The rule that generates `defaultenv_autogenerated.h` for
 `ENV_USE_DEFAULT_ENV_TEXT_FILE` uses `xxd -i`, which is not in Yocto's
@@ -461,4 +585,6 @@ DTS-change-to-validation loop needs neither a serial console nor a reflash.
 | AZ08: no USB host | `usb_drd1_dwc3` aborts on its first register read of `DWC3_GSNPSID`. No Rockchip RK3576S board file enables it; every board that does is a non-S RK3576 |
 | AZ08: drd0 is peripheral-only | In `otg` mode mainline registers xhci and root-hub autosuspend triggers an SError. The vendor kernel has a `rockchip,rk3576-dwc3` runtime-PM patch in dwc3 core; mainline does not |
 | AZ08: eMMC CQE disabled | `supports-cqe` is dropped with `/delete-property/`. With CQE on, the controller loops on `cqhci: Failed to halt` once real filesystem I/O starts |
+| Edge2: eMMC runs HS200, not HS400 | The hardware is HS400-ES capable and the vendor 6.1 kernel reaches 292 MB/s with it, but mainline's `sdhci-of-dwcmshc` programs the rk3568 HS400 TX clock tap as `DLL_TXCLK_TAPNUM_DEFAULT` (0x10) and configures no CMDOUT tap — that branch is RK3588-only, and the vendor driver uses tx/cmd/strbin = 8/8/4. The card enumerates at HS400 ES and every read works (enhanced strobe is device-driven), but the first write fails with `-EIO` and the rootfs cannot be mounted. No rk3566/rk3568 board in 6.18 declares `mmc-hs400`. `rockchip,txclk-tapnum` is in the binding if someone wants to retry |
+| Edge2: eth0 MAC address is random | Nothing on the board provides a MAC, so the kernel generates a locally-administered one that changes across boots |
 | AZ08: SDIO runs at 148.5 MHz | `dw_mmc-rockchip` divides `cclk_src_sdio` by a fixed 2, and on RK3576 that clock tops out at gpll/4 = 297 MHz. RK356x has a `COMPOSITE_NODIV` mux with an exact 300 MHz tap. 1 % low, inside SDR104 tolerance |
