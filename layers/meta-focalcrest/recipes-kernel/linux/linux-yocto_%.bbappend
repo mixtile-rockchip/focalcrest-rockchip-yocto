@@ -87,3 +87,21 @@ do_configure:prepend:edge2() {
 			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
 	fi
 }
+
+COMPATIBLE_MACHINE:rk3588-mixtile-blade3 = "rk3588-mixtile-blade3"
+
+SRC_URI:append:blade3 = " \
+    file://defconfig \
+    file://rk3588-mixtile-blade3.dts \
+    file://0001-drm-bridge-dw-hdmi-qp-select-SND_SOC_HDMI_CODEC.patch \
+"
+
+do_configure:prepend:blade3() {
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3.dts \
+		${S}/arch/arm64/boot/dts/rockchip/
+	if ! grep -q "rk3588-mixtile-blade3.dtb" \
+			${S}/arch/arm64/boot/dts/rockchip/Makefile; then
+		echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-mixtile-blade3.dtb' \
+			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
+	fi
+}

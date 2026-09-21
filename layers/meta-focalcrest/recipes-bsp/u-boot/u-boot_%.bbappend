@@ -49,6 +49,7 @@ DEPENDS:append:focalcrest-rk3566 = " xxd-native"
 DEPENDS:append:focalcrest-rk3576 = " xxd-native"
 DEPENDS:append:focalcrest-rk3588s = " xxd-native"
 DEPENDS:append:focalcrest-rk3568 = " xxd-native"
+DEPENDS:append:focalcrest-rk3588 = " xxd-native"
 
 do_configure:prepend:az07() {
 	install -m 0644 ${UNPACKDIR}/rk3566-focalcrest-az07.dts \
@@ -136,4 +137,23 @@ do_configure:prepend:edge2() {
 	install -d ${S}/board/focalcrest/edge2
 	install -m 0644 ${UNPACKDIR}/rk3568-mixtile-edge2.env \
 		${S}/board/focalcrest/edge2/
+}
+
+SRC_URI:append:blade3 = " \
+    file://rk3588-mixtile-blade3.dts \
+    file://rk3588-mixtile-blade3-u-boot.dtsi \
+    file://rk3588-mixtile-blade3_defconfig \
+    file://rk3588-mixtile-blade3.env \
+"
+
+do_configure:prepend:blade3() {
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3.dts \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3-u-boot.dtsi \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3_defconfig \
+		${S}/configs/
+	install -d ${S}/board/focalcrest/blade3
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3.env \
+		${S}/board/focalcrest/blade3/
 }

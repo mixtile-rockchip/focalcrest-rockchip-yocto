@@ -368,6 +368,74 @@ usage, none of them hardware description:
 (routed to the U.2 connector, no PHY on board), `combphy0` (no SuperSpeed pairs
 on the Type-C receptacle).
 
+### `rk3588-mixtile-blade3`
+
+Mixtile Blade 3, Rockchip **RK3588** (not the RK3588S of AZ04B). The device tree
+is an upstream mainline device tree, installed verbatim — the layer copy is
+byte-identical to its source.
+
+`focalcrest-rk3588.inc` requires upstream `rk3588.inc`, which itself requires
+`rk3588s.inc`. That yields `SOC_FAMILY = "rk3588"` **and** both `rk3588` and
+`rk3588s` in `MACHINEOVERRIDES`, so rkbin's `COMPATIBLE_MACHINE:rk3588s` matches
+and the blob names already resolve. Two things AZ04B needs are therefore not
+needed here: no rkbin bbappend, and no manual `SOC_FAMILY` pin.
+
+**No OP-TEE**, for the same reason as Edge2: the device tree carries no
+`reserved-memory` node, so `focalcrest-rk3588` is deliberately absent from
+`do_fc_wrap_optee`'s SoC set and `u-boot.itb` holds TPL + SPL + U-Boot + bl31
+only. bl31 logs `No OPTEE provided by BL2` and continues.
+
+| Peripheral | Configuration |
+|---|---|
+| eMMC | `sdhci` / `rk3588-dwcmshc`, 8-bit **HS200** 200 MHz, non-removable. HS400 is not declared — this board carries the same `DA4032` part as Edge2, which fails writes under mainline HS400-ES |
+| SD slot | `sdmmc`, 4-bit SDR104, `max-frequency` held at 150 MHz |
+| PCIe | three links: `pcie3x4` Gen3 x4 to the U.2 connector (NVMe), `pcie2x1l0` Gen2 x1 to an ASM1182 switch carrying 2× RTL8125 2.5GbE, `pcie2x1l1` Gen2 x1 to the mini PCIe slot |
+| SATA | `sata0` (`snps,dwc-ahci`), shares the U.2 connector with the PCIe lanes |
+| USB-C | two FUSB302 (i2c1 `usbc1`, i2c6 `usbc0`), both `usb-c-connector` with DP alt-mode described; PORT1 is the board's PD power input, up to 20 V @ 3 A |
+| USB | 2× xhci with role switch, `usbdp_phy0/1` mode+orientation switch, 2× EHCI/OHCI |
+| PMIC | RK806 on `spi2` (m2 pins, cs0), 3-wire; CPU/NPU regulators are RK8602/RK8603 on i2c0 and i2c1 |
+| Display | VOP2, HDMI TX0 (`rk3588-dw-hdmi-qp` + `hdptxphy0`), DP0/DP1 through the two Type-C ports |
+| HDMI RX | `hdmi_receiver` (`snps,dw-hdmirx`), with a 160 MiB `shared-dma-pool` reservation |
+| GPU / NPU | Mali G610 (panthor), 3× `rknn_core` (rocket) |
+| Thermal / fan | `tsadc` with `hw-tshut-mode = <1>`, `pwm-fan` |
+| mmc numbering | `mmc0` = eMMC, `mmc1` = SD slot |
+
+**defconfig delta against AZ04B** (Blade3's defconfig is derived from AZ04B's):
+
+```
+CONFIG_ATA=y                        # sata0
+CONFIG_AHCI_DWC=m
+CONFIG_PHY_ROCKCHIP_SNPS_PCIE3=y    # pcie30phy -> pcie3x4
+CONFIG_ROCKCHIP_DW_HDMI_QP=y        # hdmi0
+CONFIG_PHY_ROCKCHIP_SAMSUNG_HDPTX=y
+CONFIG_ROCKCHIP_DW_DP=y             # dp0 / dp1
+CONFIG_VIDEO_SYNOPSYS_HDMIRX=m      # hdmi_receiver
+CONFIG_TYPEC_FUSB302=y              # see Implementation notes
+CONFIG_BLK_DEV_NVME=m               # U.2 NVMe
+CONFIG_R8169=m                      # 2x RTL8125 behind the PCIe switch
+CONFIG_MAC80211=m                   # IWLMVM depends on it
+CONFIG_WLAN_VENDOR_INTEL=y
+CONFIG_IWLWIFI=m                    # AX200 in the mini PCIe slot
+CONFIG_IWLMVM=m
+```
+
+The last five are for devices that are enumerated on PCIe rather than described
+in the device tree; the firmware comes from `linux-firmware-rtl-nic` and
+`linux-firmware-iwlwifi-misc` (the AX200's `iwlwifi-cc-a0-*.ucode` lives in that
+catch-all package, there is no per-device one).
+
+HDMI audio needs the kernel patch in `linux-yocto/rk3588-mixtile-blade3/`:
+`DRM_DW_HDMI_QP` never selects `SND_SOC_HDMI_CODEC`, which has no prompt and so
+cannot be set from a defconfig. Without it `drm_hdmi_audio_helper` registers an
+`hdmi-audio-codec` platform device that no driver claims, and `hdmi0_sound`
+defers forever reporting `asoc-simple-card: parse error`.
+
+**Validated on hardware**: boot chain without OP-TEE, eMMC HS200, PCIe Gen3 x4
+with NVMe (1725 MB/s sequential read), 2× 2.5GbE (940 Mbit/s TX / 873 Mbit/s RX
+over raw TCP, no errors), Intel AX200 in the mini PCIe slot, SATA controller
+registered (no drive attached), Mali G610 and all three NPU cores, seven thermal
+zones, CDC-ECM debug link.
+
 ## Partition layout
 
 `files/wic/focalcrest-emmc.wks.in`
@@ -490,6 +558,23 @@ optee-os. The `ddr-rk3576.bin` deploy name is fixed by
 `rk3576.dtsi` does not include it; the upstream rk3576 board dts files all do.
 Omitting it fails in `dtc` with `Unexpected 'GPIO_ACTIVE_LOW'` at a line inside
 `rk3576.dtsi`, which looks like an upstream bug.
+
+**`CONFIG_TYPEC_FUSB302=y`, not `=m`, on a board powered over USB-C PD**
+Blade 3 takes its power through Type-C PORT1, so the size of the power budget
+depends on a PD contract, and the whole Type-C stack is otherwise already
+built-in (`TYPEC`, `TYPEC_TCPM`, `TYPEC_TCPCI`, `USB_ROLE_SWITCH`). Leaving the
+leaf driver as a module hands the timing to udev: measured on hardware, the
+module probed at 2.889 s and the contract landed at 4.384 s, after the GPU
+firmware boot, the NVMe init and both NICs. Built in, the same board probes at
+1.256 s and has its contract at 2.898 s. Every dependency of `fusb302_probe()`
+that can return `-EPROBE_DEFER` is already `=y`, so nothing else has to change.
+The negotiation itself is entirely kernel-side — TCPM runs its state machine on
+its own kthread worker — and is bounded below by protocol timing (a 100 ms
+`PORT_RESET`, a 920 ms `PORT_RESET_WAIT_OFF` and a 200 ms tCCDebounce), which no
+config change can shorten. TCPM logs the whole exchange with timestamps to
+`/sys/kernel/debug/usb/tcpm-<bus>-<addr>/log`, which is **drained on read** — one
+capture per boot. Note the sysfs port numbering is inverted with respect to the
+device tree labels: `port0` is the node labelled `usbc1`.
 
 **A PHY behind a reset GPIO needs `snps,reset-gpio` on the MAC node**
 `fwnode_mdiobus_register_phy()` reads the PHY ID with `get_phy_device()` *before*
