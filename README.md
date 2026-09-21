@@ -42,3 +42,4 @@ baseline.
 | `rk3588s-focalcrest-az04b` | RK3588S |
 | `rk3568-mixtile-edge2` | RK3568 |
 | `rk3588-mixtile-blade3` | RK3588 |
+| `rk3588-mixtile-core3588e` | RK3588 |

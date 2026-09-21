@@ -157,3 +157,22 @@ do_configure:prepend:blade3() {
 	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-blade3.env \
 		${S}/board/focalcrest/blade3/
 }
+
+SRC_URI:append:core3588e = " \
+    file://rk3588-mixtile-core3588e.dts \
+    file://rk3588-mixtile-core3588e-u-boot.dtsi \
+    file://rk3588-mixtile-core3588e_defconfig \
+    file://rk3588-mixtile-core3588e.env \
+"
+
+do_configure:prepend:core3588e() {
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-core3588e.dts \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-core3588e-u-boot.dtsi \
+		${S}/arch/arm/dts/
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-core3588e_defconfig \
+		${S}/configs/
+	install -d ${S}/board/focalcrest/core3588e
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-core3588e.env \
+		${S}/board/focalcrest/core3588e/
+}

@@ -105,3 +105,21 @@ do_configure:prepend:blade3() {
 			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
 	fi
 }
+COMPATIBLE_MACHINE:rk3588-mixtile-core3588e = "rk3588-mixtile-core3588e"
+
+SRC_URI:append:core3588e = " \
+    file://defconfig \
+    file://rk3588-mixtile-core3588e.dts \
+    file://0001-drm-bridge-dw-hdmi-qp-select-SND_SOC_HDMI_CODEC.patch \
+"
+
+do_configure:prepend:core3588e() {
+	install -m 0644 ${UNPACKDIR}/rk3588-mixtile-core3588e.dts \
+		${S}/arch/arm64/boot/dts/rockchip/
+	if ! grep -q "rk3588-mixtile-core3588e.dtb" \
+			${S}/arch/arm64/boot/dts/rockchip/Makefile; then
+		echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-mixtile-core3588e.dtb' \
+			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
+	fi
+}
+

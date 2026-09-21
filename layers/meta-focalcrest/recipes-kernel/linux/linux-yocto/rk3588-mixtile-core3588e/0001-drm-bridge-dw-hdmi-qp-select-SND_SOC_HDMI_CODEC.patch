@@ -1,0 +1,58 @@
+From 7c0f5a1e6b3d4a2f9e8c1d0b5a4f3e2d1c0b9a87 Mon Sep 17 00:00:00 2001
+From: Kevin Zhuang <kevin.zhuang@focalcrest.com>
+Date: Sun, 21 Sep 2026 14:20:00 +0800
+Subject: [PATCH] drm/bridge: dw-hdmi-qp: select SND_SOC_HDMI_CODEC
+
+dw-hdmi-qp advertises DRM_BRIDGE_OP_HDMI_AUDIO and fills in
+hdmi_audio_dev, so drm_connector_hdmi_audio_init() registers an
+"hdmi-audio-codec" platform device parented to the HDMI controller. The
+driver that binds that device is sound/soc/codecs/hdmi-codec.c, built
+under SND_SOC_HDMI_CODEC.
+
+SND_SOC_HDMI_CODEC has no prompt and can only be reached through a
+select. In this directory the only symbol selecting it is
+DRM_DW_HDMI_I2S_AUDIO, which depends on the legacy DRM_DW_HDMI
+controller. A configuration that enables the QP controller without the
+legacy one therefore builds the DRM half of the audio path and leaves
+the ASoC half out: the codec platform device is created and never
+claimed by any driver.
+
+Every board that wires its HDMI as a simple-audio-card codec then fails
+to bring the card up. snd_soc_get_dlc() walks the registered components
+looking for one whose of_node matches the sound-dai phandle, finds
+none, and returns -EPROBE_DEFER; simple_probe() passes that to
+dev_err_probe(), which records the string shared by all of its exit
+paths. The result is a card that never registers, reported as
+
+  platform hdmi0-sound: deferred probe pending: asoc-simple-card: parse error
+
+which names neither the missing driver nor the real error code.
+
+Observed on a Mixtile Blade 3 (RK3588) running 6.18.35 with
+ROCKCHIP_DW_HDMI_QP=y and ROCKCHIP_DW_HDMI unset. On that kernel
+/sys/bus/platform/devices/hdmi-audio-codec.0.auto exists with the
+correct parent of_node and no driver bound, while the CPU side
+(rockchip-i2s-tdm) probes fine.
+
+Select the codec the same way the legacy controller does, so enabling
+the QP controller is enough to get a working HDMI audio path.
+
+Signed-off-by: Kevin Zhuang <kevin.zhuang@focalcrest.com>
+---
+Upstream-Status: Pending
+
+ drivers/gpu/drm/bridge/synopsys/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/bridge/synopsys/Kconfig b/drivers/gpu/drm/bridge/synopsys/Kconfig
+index 1160aa1d1..2f4c8b3e7 100644
+--- a/drivers/gpu/drm/bridge/synopsys/Kconfig
++++ b/drivers/gpu/drm/bridge/synopsys/Kconfig
+@@ -60,6 +60,7 @@ config DRM_DW_HDMI_QP
+ 	select DRM_DISPLAY_HELPER
+ 	select DRM_KMS_HELPER
+ 	select REGMAP_MMIO
++	select SND_SOC_HDMI_CODEC if SND_SOC
+ 
+ config DRM_DW_MIPI_DSI
+ 	tristate

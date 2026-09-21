@@ -436,6 +436,76 @@ over raw TCP, no errors), Intel AX200 in the mini PCIe slot, SATA controller
 registered (no drive attached), Mali G610 and all three NPU cores, seven thermal
 zones, CDC-ECM debug link.
 
+### `rk3588-mixtile-core3588e`
+
+Mixtile Core 3588E, a 260-pin SO-DIMM module with the Jetson Nano / Xavier NX
+pinout, full **RK3588**. The device tree is an upstream mainline device tree.
+
+**Changes against the source device tree**:
+
+* `&usb_host0_xhci` `dr_mode` `"otg"` -> `"peripheral"` (Implementation notes).
+
+Machine integration is identical to Blade3: `focalcrest-rk3588.inc`, no rkbin
+bbappend, no manual `SOC_FAMILY` pin, and **no OP-TEE** (the device tree carries
+no `reserved-memory` node).
+
+The module's only power input is a fixed **5 V** rail (`VDD_IN_5V`, SO-DIMM pins
+253-260). The two Type-C pin groups on the connector carry USB data only — no
+CC, no SBU, no PD controller anywhere — so there is no TCPM in either the kernel
+or U-Boot.
+
+| Peripheral | Configuration |
+|---|---|
+| eMMC | `sdhci` / `rk3588-dwcmshc`, 8-bit, non-removable. No speed cap is declared in the device tree; the controller capability register still yields **HS200** at 187.5 MHz |
+| SD slot | `sdmmc`, 4-bit SDR104, `max-frequency` 150 MHz, `broken-cd` — `SDMMC_DET` stops at a test point and never reaches the connector |
+| Ethernet | `gmac0` RGMII to an on-module RTL8211F at MDIO address 1, `rgmii-rxid` with `tx_delay = 0x43`; PHY reset sits on the PHY node |
+| PCIe | `pcie3x4` Gen3 x4 (aggregated, `vcc3v3_pcie30` powers the on-module refclk generator) and `pcie2x1l0` Gen2 x1 through `combphy1_ps`, both to the connector |
+| USB | `usb_host0_xhci` OTG (USB2 only on TYPEC0), `usb_host1_xhci` host (one SS pair), `usb_host0_ehci` / `ohci` |
+| PMIC | RK806 on `spi2` (m2 pins, cs0); CPU big0/big1 and NPU rails are RK8602/RK8603 on i2c0 and i2c1 |
+| Display | VOP2, HDMI TX0 (`rk3588-dw-hdmi-qp` + `hdptxphy0`) on VP0, eDP1 (`rk3588-edp` + `hdptxphy1`) on VP2 |
+| Audio | `i2s5_8ch` into `hdmi0_sound` |
+| GPU / NPU | Mali G610 (panthor), 3× `rknn_core` (rocket) |
+| RTC | `hym8563` on i2c4, INT on GPIO0_B0 |
+| Thermal / fan | `tsadc`, `pwm-fan` on `pwm2` with a tacho input, four active trips on `package_thermal` |
+| mmc numbering | `mmc0` = eMMC, `mmc1` = SD slot |
+
+**defconfig delta against Blade3** (Core3588E's defconfig is derived from it):
+
+```
+CONFIG_ROCKCHIP_ANALOGIX_DP=y       # edp1
+CONFIG_ROCKCHIP_VOP=y               # ROCKCHIP_ANALOGIX_DP still depends on it
+# CONFIG_ATA / CONFIG_AHCI_DWC      # no SATA on the module
+# CONFIG_ROCKCHIP_DW_DP             # no DP alt-mode
+# CONFIG_VIDEO_SYNOPSYS_HDMIRX      # HDMI RX pairs are not routed
+# CONFIG_TYPEC_FUSB302              # no PD controller
+# CONFIG_R8169 / CFG80211 / MAC80211 / IWLWIFI   # Blade3's PCIe NIC and Wi-Fi
+```
+
+`ROCKCHIP_VOP` is VOP1 (RK3288/RK3399) and matches nothing in this device tree;
+it is only set because `ROCKCHIP_ANALOGIX_DP` still `depends on ROCKCHIP_VOP`
+upstream, and the RK3588 eDP glue lives in the same object.
+
+HDMI audio needs the same kernel patch as Blade3, copied into
+`linux-yocto/rk3588-mixtile-core3588e/`.
+
+**Not enabled**: MIPI CSI0-4 (no mainline RK3588 ISP/CIF; only the camera I2C bus
+is described), MIPI DSI0, `spi0` / `spi1`, `i2s0`, CAN (all expansion-header only,
+no on-module device), SATA, `pcie2x1l1` / `pcie2x1l2`, HDMI RX, `u2phy3`.
+
+**Validated on hardware**: boot chain without OP-TEE, eMMC HS200 187.5 MHz
+(115 GiB AKJ21X), SD card SDR104 (59.5 GiB), `pcie3x4` Gen3 x4 with a Samsung
+980 NVMe, `pcie2x1l0` Gen1 x1, gigabit Ethernet (944 Mbit/s TX / 888 Mbit/s RX
+over raw TCP, no errors), USB 2.0 + SuperSpeed hubs on `usb_host1_xhci`, HDMI
+connected with **`hdmi0` audio card present** — the first hardware confirmation
+of the `SND_SOC_HDMI_CODEC` patch — Mali G610 (panthor), NPU (rocket), seven
+thermal zones, `pwm-fan`, `hym8563` RTC, CDC-ECM debug link.
+
+**Carrier devices with no driver in this defconfig**: the bench carrier carries a
+Realtek RTL8822CE combo card — its Bluetooth side enumerates on OHCI and works,
+its Wi-Fi side sits on `pcie2x1l0` (`10ec:c822`) unbound, because `CFG80211` /
+`MAC80211` / `RTW88` are off. The `pwm-fan` tacho reads 0 at full duty, so no fan
+is wired on this carrier.
+
 ## Partition layout
 
 `files/wic/focalcrest-emmc.wks.in`
@@ -509,6 +579,13 @@ A defconfig symbol whose Kconfig dependencies are unmet is dropped without any
 warning. `PHY_ROCKCHIP_USBDP` `depends on TYPEC`, so it was absent until
 `CONFIG_TYPEC=y` was added. Check `depends on` first, and verify against the
 generated `.config`, not the defconfig you wrote.
+
+**`dr_mode = "peripheral"` on `&usb_host0_xhci`** (Core3588E device tree)
+The module leaves `OTG_ID` on a test point and ties `VBUSDET` high, and the
+device tree names neither `usb-role-switch` nor an extcon, so `dwc3_drd_init()`
+falls through to reading the OTG block's own ID bit, which reads `OSTS = 0`
+(A-device). dwc3 then comes up in host mode, `/sys/class/udc` stays empty and the
+CDC-ECM debug link never starts.
 
 **`COMPATIBLE_MACHINE:<machine>`** (`linux-yocto_%.bbappend`)
 `meta-rockchip`'s `linux-rockchip.inc` whitelists machines one by one; a new
