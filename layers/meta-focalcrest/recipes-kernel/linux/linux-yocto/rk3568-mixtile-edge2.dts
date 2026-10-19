@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-/*
- * Mixtile Edge 2: Mixtile Core 3568 SoM on the Edge 2 mainboard.
- */
 
 /dts-v1/;
 
@@ -29,7 +26,6 @@
 		stdout-path = "serial2:1500000n8";
 	};
 
-	/* on-board oscillator, the AP6275S LPO - not the PMIC clkout */
 	wifi_lpo: clock-32k-wifi {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
@@ -101,7 +97,6 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_reg_on_h>;
 		post-power-on-delay-ms = <200>;
-		/* WL_REG_ON is active high, so the reset line is active low */
 		reset-gpios = <&gpio0 RK_PA5 GPIO_ACTIVE_LOW>;
 	};
 
@@ -138,7 +133,6 @@
 		vin-supply = <&vcc12v_dcin>;
 	};
 
-	/* pi6c pcie clock generator, also feeds the SoC refclk input */
 	vcc3v3_pi6c: regulator-vcc3v3-pi6c {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -259,7 +253,6 @@
 		     &gmac1m1_rgmii_clk
 		     &gmac1m1_rgmii_bus>;
 	snps,reset-gpio = <&gpio2 RK_PD1 GPIO_ACTIVE_LOW>;
-	/* Reset time is 20ms, 100ms for rtl8211f */
 	snps,reset-delays-us = <0 20000 100000>;
 	tx_delay = <0x4f>;
 	rx_delay = <0x26>;
@@ -267,11 +260,6 @@
 };
 
 &gpio1 {
-	/*
-	 * Selects between PCIe lane 1 and the hub SuperSpeed pair on the M.2
-	 * socket. The line is inverted and its gate is pulled up, so driving it
-	 * low actively selects PCIe rather than keeping the power-on default.
-	 */
 	m2-lane1-sel-hog {
 		gpio-hog;
 		gpios = <RK_PD0 GPIO_ACTIVE_HIGH>;
@@ -279,7 +267,6 @@
 		line-name = "m2_lane1_sel";
 	};
 
-	/* inverted FULL-CARD-POWER-OFF#: low keeps the M.2 card powered */
 	m2-card-power-hog {
 		gpio-hog;
 		gpios = <RK_PD2 GPIO_ACTIVE_HIGH>;
@@ -289,7 +276,6 @@
 };
 
 &gpio3 {
-	/* inverted M.2 RESET#: low releases the card */
 	m2-reset-hog {
 		gpio-hog;
 		gpios = <RK_PB5 GPIO_ACTIVE_HIGH>;
@@ -297,7 +283,6 @@
 		line-name = "m2_reset_n";
 	};
 
-	/* inverted mini-PCIe PERST#: low releases the card */
 	minipcie-perst-hog {
 		gpio-hog;
 		gpios = <RK_PD4 GPIO_ACTIVE_HIGH>;
@@ -608,7 +593,6 @@
 	status = "okay";
 };
 
-/* M.2 socket 2 key B; both lanes belong to this controller */
 &pcie3x2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie30x2_sideband>;
@@ -669,7 +653,6 @@
 			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		/* CLKREQ# and PEWAKE# only, PERST# is driven as a plain GPIO */
 		pcie30x2_sideband: pcie30x2-sideband {
 			rockchip,pins = <2 RK_PD4 4 &pcfg_pull_none>,
 					<2 RK_PD5 4 &pcfg_pull_none>;
@@ -718,7 +701,6 @@
 &sdhci {
 	bus-width = <8>;
 	max-frequency = <200000000>;
-	/* HS400 needs rk3568 TX tap values mainline lacks; HS200 comes from the controller caps */
 	non-removable;
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_datastrobe &emmc_rstnout>;
@@ -739,7 +721,6 @@
 	status = "okay";
 };
 
-/* AP6275S WiFi */
 &sdmmc2 {
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -795,7 +776,6 @@
 	status = "okay";
 };
 
-/* AP6275S Bluetooth */
 &uart8 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart8m0_xfer &uart8m0_ctsn &uart8m0_rtsn>;
@@ -835,7 +815,6 @@
 	status = "okay";
 };
 
-/* mini-PCIe socket, USB only */
 &usb2phy1_otg {
 	phy-supply = <&vcc3v3_minipcie>;
 	status = "okay";
@@ -849,7 +828,6 @@
 	status = "okay";
 };
 
-/* the Type-C receptacle has no SuperSpeed pairs and combphy0 is unused */
 &usb_host0_xhci {
 	extcon = <&usb2phy0>;
 	maximum-speed = "high-speed";
@@ -863,7 +841,6 @@
 	#size-cells = <0>;
 	status = "okay";
 
-	/* RESET# is inverted on the board, hence the active high GPIO */
 	hub_2_0: hub@1 {
 		compatible = "usb2109,2817";
 		reg = <1>;
