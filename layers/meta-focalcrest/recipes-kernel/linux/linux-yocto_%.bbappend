@@ -8,6 +8,7 @@ COMPATIBLE_MACHINE:rk3566-focalcrest-az07 = "rk3566-focalcrest-az07"
 SRC_URI:append:az07 = " \
     file://defconfig \
     file://rk3566-focalcrest-az07.dts \
+    file://0001-mmc-dw_mmc-rockchip-verify-the-tuned-phase-before-returning.patch \
 "
 
 do_configure:prepend:az07() {
@@ -105,12 +106,15 @@ do_configure:prepend:blade3() {
 			>> ${S}/arch/arm64/boot/dts/rockchip/Makefile
 	fi
 }
+
 COMPATIBLE_MACHINE:rk3588-mixtile-core3588e = "rk3588-mixtile-core3588e"
 
 SRC_URI:append:core3588e = " \
     file://defconfig \
     file://rk3588-mixtile-core3588e.dts \
     file://0001-drm-bridge-dw-hdmi-qp-select-SND_SOC_HDMI_CODEC.patch \
+    file://0002-drm-rockchip-dw-hdmi-qp-honor-hpd-inverted.patch \
+    file://0003-drm-analogix-dp-support-downstream-dp-connector.patch \
 "
 
 do_configure:prepend:core3588e() {
