@@ -1,0 +1,134 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Focalcrest
+
+set -eu
+
+GADGET=/sys/kernel/config/usb_gadget/focalcrest
+FFS=/dev/usb-ffs/adb
+adbd_pid=
+
+fail() {
+	echo "focalcrest-usb-gadget: $*" >&2
+	exit 1
+}
+
+unmount_ffs() {
+	if grep -qs " $FFS " /proc/mounts; then
+		umount "$FFS"
+	fi
+}
+
+remove_gadget() {
+	if [ -d "$GADGET" ]; then
+		if [ -n "$(cat "$GADGET/UDC")" ]; then
+			printf '\n' > "$GADGET/UDC"
+		fi
+		rm -f "$GADGET/configs/c.1/ffs.adb"
+		unmount_ffs
+		[ ! -d "$GADGET/configs/c.1/strings/0x409" ] || rmdir "$GADGET/configs/c.1/strings/0x409"
+		[ ! -d "$GADGET/configs/c.1" ] || rmdir "$GADGET/configs/c.1"
+		[ ! -d "$GADGET/functions/ffs.adb" ] || rmdir "$GADGET/functions/ffs.adb"
+		[ ! -d "$GADGET/strings/0x409" ] || rmdir "$GADGET/strings/0x409"
+		rmdir "$GADGET"
+	fi
+}
+
+cleanup() {
+	status=$?
+	trap - EXIT INT TERM HUP
+	set +e
+	if [ -d "$GADGET" ] && [ -n "$(cat "$GADGET/UDC")" ]; then
+		printf '\n' > "$GADGET/UDC"
+	fi
+	if [ -n "$adbd_pid" ]; then
+		kill "$adbd_pid" 2>/dev/null
+		wait "$adbd_pid" 2>/dev/null
+	fi
+	if ! remove_gadget; then
+		echo "focalcrest-usb-gadget: gadget cleanup failed" >&2
+		status=1
+	fi
+	rmdir "$FFS" /dev/usb-ffs 2>/dev/null
+	exit "$status"
+}
+
+[ "${1:-}" = run ] || fail "usage: $0 run"
+[ -d /sys/kernel/config/usb_gadget ] || fail "USB configfs is unavailable"
+
+if [ -d "$GADGET/functions" ]; then
+	for function in "$GADGET/functions/"*; do
+		[ ! -e "$function" ] || [ "$function" = "$GADGET/functions/ffs.adb" ] ||
+			fail "existing gadget has a non-ADB function: $function"
+	done
+elif grep -qs " $FFS " /proc/mounts; then
+	fail "$FFS is already mounted without our gadget"
+fi
+
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+remove_gadget
+
+attempt=0
+udc=
+while [ "$attempt" -lt 100 ]; do
+	for controller in /sys/class/udc/*; do
+		if [ -e "$controller" ]; then
+			udc=${controller##*/}
+			break
+		fi
+	done
+	[ -z "$udc" ] || break
+	attempt=$((attempt + 1))
+	sleep 0.1
+done
+[ -n "$udc" ] || fail "no USB device controller available"
+
+mkdir "$GADGET"
+printf '0x1d6b\n' > "$GADGET/idVendor"
+printf '0x0104\n' > "$GADGET/idProduct"
+printf '0x0100\n' > "$GADGET/bcdDevice"
+printf '0x0200\n' > "$GADGET/bcdUSB"
+mkdir "$GADGET/strings/0x409"
+printf 'Focalcrest\n' > "$GADGET/strings/0x409/manufacturer"
+printf '%s\n' "$(cat /etc/hostname)" > "$GADGET/strings/0x409/product"
+serial=$(tr -d '\000' < /proc/device-tree/serial-number)
+[ -n "$serial" ] || fail "/proc/device-tree/serial-number is empty"
+printf '%s\n' "$serial" > "$GADGET/strings/0x409/serialnumber"
+mkdir -p "$GADGET/configs/c.1/strings/0x409"
+printf 'USB ADB\n' > "$GADGET/configs/c.1/strings/0x409/configuration"
+printf '250\n' > "$GADGET/configs/c.1/MaxPower"
+mkdir "$GADGET/functions/ffs.adb"
+mkdir -p "$FFS"
+mount -t functionfs adb "$FFS"
+[ -e "$FFS/ep0" ] || fail "FunctionFS control endpoint is unavailable"
+
+/usr/bin/adbd &
+adbd_pid=$!
+attempt=0
+while [ "$(cat "$GADGET/functions/ffs.adb/ready")" != 1 ]; do
+	kill -0 "$adbd_pid" 2>/dev/null || fail "adbd exited before FunctionFS became ready"
+	[ "$attempt" -lt 100 ] || fail "FunctionFS readiness timed out"
+	attempt=$((attempt + 1))
+	sleep 0.1
+done
+ln -s "$GADGET/functions/ffs.adb" "$GADGET/configs/c.1/ffs.adb"
+printf '%s\n' "$udc" > "$GADGET/UDC"
+echo "focalcrest-usb-gadget: USB ADB bound to $udc (serial $serial)"
+
+not_ready=0
+while kill -0 "$adbd_pid" 2>/dev/null; do
+	if [ "$(cat "$GADGET/functions/ffs.adb/ready")" = 1 ]; then
+		not_ready=0
+		if [ -z "$(cat "$GADGET/UDC")" ]; then
+			printf '%s\n' "$udc" > "$GADGET/UDC"
+		fi
+	else
+		not_ready=$((not_ready + 1))
+		[ "$not_ready" -lt 10 ] || fail "FunctionFS did not recover"
+	fi
+	sleep 1
+done
+wait "$adbd_pid" || true
+adbd_pid=
+fail "adbd exited"

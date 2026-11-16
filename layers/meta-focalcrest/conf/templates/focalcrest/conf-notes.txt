@@ -1,0 +1,30 @@
+Focalcrest Rockchip BSP (Yocto 6.0 wrynose)
+
+This layer builds the Mixtile base image.  It provides SSH, ADB and
+automatic root partition/filesystem growth.
+
+Common targets:
+  bitbake focalcrest-image-base             # headless base system
+  bitbake virtual/bootloader          # u-boot + idbloader only
+  bitbake virtual/kernel              # kernel + DTB only (note: does NOT refresh fitImage)
+  bitbake linux-yocto-fitimage        # build this after DTS changes to refresh /boot/fitImage
+
+Artifacts: tmp/deploy/images/${MACHINE}/
+  *.rootfs.wic       full-disk image -> rkdeveloptool wl 0 <file>
+  idbloader.img      LBA 64
+  u-boot.itb         LBA 16384
+  fitImage           kernel FIT (DTB included) -> /boot/fitImage in the rootfs
+
+Supported MACHINEs:
+  rk3568-mixtile-edge2
+  rk3588-mixtile-blade3
+  rk3588-mixtile-core3588e
+
+Switching MACHINE (one build directory per board, sharing downloads/sstate):
+  . ./setup-env.sh build-blade3
+  echo 'MACHINE = "rk3588-mixtile-blade3"' >> conf/auto.conf
+
+Adding a board: conf/machine/<soc>-<vendor>-<board>.conf
+                holds only KERNEL_DEVICETREE / UBOOT_MACHINE / on-board peripherals;
+                anything shared across one SoC goes in include/focalcrest-<soc>.inc
+Adding a SoC:   conf/machine/include/focalcrest-<soc>.inc

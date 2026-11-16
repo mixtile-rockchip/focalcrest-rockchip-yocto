@@ -1,0 +1,19 @@
+[Unit]
+Description=Focalcrest USB ADB gadget
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=ADB_TCP_PORT=0 ADBD_SHELL=/bin/sh
+BindReadOnlyPaths=/usr/share/rockchip-adbd/nsswitch.conf:/etc/nsswitch.conf
+ExecStart=/usr/sbin/focalcrest-usb-gadget run
+Restart=on-failure
+RestartSec=1
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
